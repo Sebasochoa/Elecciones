@@ -533,18 +533,21 @@
 
   /* ── helpers para parsear la respuesta de ONPE ── */
   function getCandidatos(data) {
+    // La API devuelve { success, data: [...] }
     let lista = Array.isArray(data)
       ? data
-      : (data.participantes ?? data.lista ?? data.candidatos ?? data.data ?? []);
+      : (data.data ?? data.participantes ?? data.lista ?? data.candidatos ?? []);
     return lista.slice().sort((a, b) => getVotos(b) - getVotos(a));
   }
-  const getVotos  = c => c.totalVotos ?? c.votos ?? c.cantidadVotos ?? 0;
-  const getPct    = c => c.porcentaje ?? c.pct ?? c.porcentajeVotos ?? null;
-  const getNombre = c => c.nombreCompleto ?? c.nombre ?? c.candidato ?? c.nombreCandidato ?? '—';
-  const getPartido= c => c.nombreOrganizacion ?? c.partido ?? c.organizacion ?? c.agrupacion ?? '';
+  const getVotos  = c => c.totalVotos ?? c.sumaVotos ?? c.votos ?? c.cantidadVotos ?? 0;
+  const getPct    = c => c.porcentajeVotosValidos ?? c.porcentajeVotos ?? c.porcentaje ?? c.pct ?? null;
+  const getNombre = c => c.nombreCandidato ?? c.nombreCompleto ?? c.nombre ?? c.candidato ?? '—';
+  const getPartido= c => c.nombreAgrupacionPolitica ?? c.nombreOrganizacion ?? c.partido ?? c.organizacion ?? '';
 
-  function renderTotales(data) {
-    const pct          = data.porcentajeActasContabilizadas ?? data.pctActasContabilizadas ?? data.porcentaje ?? null;
+  function renderTotales(raw) {
+    // La API devuelve { success, data: {...} } o { success, data: [...] }
+    const data = (raw.data && !Array.isArray(raw.data)) ? raw.data : raw;
+    const pct          = data.porcentajeActasContabilizadas ?? data.porcentajeActas ?? data.porcentaje ?? null;
     const totalActas   = data.totalActas ?? data.cantidadActasTotal ?? null;
     const contabilizadas = data.actasContabilizadas ?? data.cantidadActasContabilizadas ?? null;
     const pendientes   = data.actasPendientes ?? data.cantidadActasPendientes ?? null;
