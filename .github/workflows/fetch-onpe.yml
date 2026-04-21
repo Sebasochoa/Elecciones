@@ -26,54 +26,59 @@ jobs:
           import requests
           import json
           import time
-
-          session = requests.Session()
-          session.headers.update({
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-              "Accept-Language": "es-PE,es;q=0.9",
-          })
-
-          # Paso 1: visitar la página principal para obtener cookies
-          print("Obteniendo cookies...")
-          try:
-              session.get("https://resultadoelectoral.onpe.gob.pe/main/resumen", timeout=15, verify=False)
-              print(f"  Cookies: {dict(session.cookies)}")
-          except Exception as e:
-              print(f"  Advertencia al obtener cookies: {e}")
-
-          time.sleep(2)
-
-          # Paso 2: hacer los requests a la API con las cookies obtenidas
-          session.headers.update({
-              "Accept": "application/json, text/plain, */*",
-              "Referer": "https://resultadoelectoral.onpe.gob.pe/main/resumen",
-              "Origin": "https://resultadoelectoral.onpe.gob.pe",
-              "sec-fetch-dest": "empty",
-              "sec-fetch-mode": "cors",
-              "sec-fetch-site": "same-origin",
-          })
+          import warnings
+          warnings.filterwarnings('ignore')
 
           ENDPOINTS = {
               "participantes": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion",
               "totales": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion",
           }
 
+          def fetch_with_session():
+              session = requests.Session()
+              session.headers.update({
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                  "Accept-Language": "es-PE,es;q=0.9",
+              })
+              # Obtener cookies visitando la página principal
+              try:
+                  session.get("https://resultadoelectoral.onpe.gob.pe/main/resumen", timeout=15, verify=False)
+              except:
+                  pass
+              time.sleep(1)
+              session.headers.update({
+                  "Accept": "application/json, text/plain, */*",
+                  "Referer": "https://resultadoelectoral.onpe.gob.pe/main/resumen",
+                  "Origin": "https://resultadoelectoral.onpe.gob.pe",
+                  "sec-fetch-dest": "empty",
+                  "sec-fetch-mode": "cors",
+                  "sec-fetch-site": "same-origin",
+              })
+              return session
+
           for name, url in ENDPOINTS.items():
               ok = False
-              for attempt in range(3):
+              for attempt in range(5):
                   try:
+                      session = fetch_with_session()
                       r = session.get(url, timeout=15, verify=False)
-                      print(f"  {name} status: {r.status_code}, bytes: {len(r.content)}")
+                      preview = r.content[:80]
+                      print(f"  {name} attempt {attempt+1}: status={r.status_code} bytes={len(r.content)} preview={preview}")
+                      # Verificar que empiece con { (JSON) no con < (HTML)
+                      stripped = r.content.lstrip()
+                      if not stripped.startswith(b'{'):
+                          raise ValueError(f"Respuesta no es JSON: {preview}")
                       data = r.json()
-                      assert data.get("success") == True, f"success!=True: {str(data)[:100]}"
-                      with open(f"data/{name}.json", "w") as f:
-                          json.dump(data, f)
-                      print(f"✓ {name} OK")
+                      assert data.get("success") == True
+                      with open(f"data/{name}.json", "w", encoding="utf-8") as f:
+                          json.dump(data, f, ensure_ascii=False)
+                      print(f"✓ {name} OK en intento {attempt+1}")
                       ok = True
                       break
                   except Exception as e:
                       print(f"  intento {attempt+1} falló: {e}")
-                      time.sleep(3)
+                      time.sleep(5 * (attempt + 1))  # backoff: 5s, 10s, 15s, 20s, 25s
+
               if not ok:
                   raise SystemExit(f"✗ {name} falló todos los intentos")
 
