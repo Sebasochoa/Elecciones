@@ -1,0 +1,45 @@
+name: Fetch ONPE Data
+
+on:
+  schedule:
+    # Cada 5 minutos (GitHub Actions mínimo es 5 min)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # permite ejecutar manualmente
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch participantes
+        run: |
+          curl -s \
+            -H "Accept: application/json" \
+            -H "User-Agent: Mozilla/5.0" \
+            "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion" \
+            -o data/participantes.json
+
+      - name: Fetch totales
+        run: |
+          curl -s \
+            -H "Accept: application/json" \
+            -H "User-Agent: Mozilla/5.0" \
+            "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion" \
+            -o data/totales.json
+
+      - name: Add timestamp
+        run: |
+          echo "{\"updatedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > data/meta.json
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "chore: update ONPE data $(date -u +%H:%M UTC)"
+          git push
