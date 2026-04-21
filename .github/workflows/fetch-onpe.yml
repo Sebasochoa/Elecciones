@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   fetch:
@@ -15,69 +17,68 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Fetch participantes
-        run: |
-          # Intentar con múltiples proxies/métodos hasta que uno funcione
-          URL="https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion"
-          
-          # Intento 1: directo con todos los headers
-          curl -s -L --max-time 15 \
-            -H "Accept: application/json, text/plain, */*" \
-            -H "Accept-Language: es-PE,es;q=0.9,en;q=0.8" \
-            -H "Cache-Control: no-cache" \
-            -H "Connection: keep-alive" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
-            -H "Referer: https://resultadoelectoral.onpe.gob.pe/" \
-            -H "sec-ch-ua: \"Chromium\";v=\"124\"" \
-            -H "sec-ch-ua-mobile: ?0" \
-            -H "sec-fetch-dest: empty" \
-            -H "sec-fetch-mode: cors" \
-            -H "sec-fetch-site: same-origin" \
-            "$URL" -o data/participantes.json
-          
-          python3 -c "import json; json.load(open('data/participantes.json'))" 2>/dev/null && echo "OK directo" && exit 0
-          
-          # Intento 2: via allorigins proxy
-          echo "Intentando via proxy..."
-          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$URL'))")
-          curl -s -L --max-time 15 \
-            "https://api.allorigins.win/get?url=${ENCODED}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); open('data/participantes.json','w').write(d['contents'])"
-          
-          python3 -c "import json; json.load(open('data/participantes.json'))" 2>/dev/null && echo "OK via proxy" && exit 0
-          
-          echo "Todos los intentos fallaron"
-          head -3 data/participantes.json
-          exit 1
+      - name: Install dependencies
+        run: pip install requests --break-system-packages
 
-      - name: Fetch totales
+      - name: Fetch data
         run: |
-          URL="https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion"
-          
-          curl -s -L --max-time 15 \
-            -H "Accept: application/json, text/plain, */*" \
-            -H "Accept-Language: es-PE,es;q=0.9,en;q=0.8" \
-            -H "Cache-Control: no-cache" \
-            -H "Connection: keep-alive" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
-            -H "Referer: https://resultadoelectoral.onpe.gob.pe/" \
-            -H "sec-fetch-dest: empty" \
-            -H "sec-fetch-mode: cors" \
-            -H "sec-fetch-site: same-origin" \
-            "$URL" -o data/totales.json
-          
-          python3 -c "import json; json.load(open('data/totales.json'))" 2>/dev/null && echo "OK directo" && exit 0
-          
-          echo "Intentando via proxy..."
-          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$URL'))")
-          curl -s -L --max-time 15 \
-            "https://api.allorigins.win/get?url=${ENCODED}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); open('data/totales.json','w').write(d['contents'])"
-          
-          python3 -c "import json; json.load(open('data/totales.json'))" 2>/dev/null && echo "OK via proxy" && exit 0
-          
-          echo "Todos los intentos fallaron"
-          exit 1
+          python3 << 'PYEOF'
+          import requests
+          import json
+          import time
+
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept-Language": "es-PE,es;q=0.9",
+          })
+
+          # Paso 1: visitar la página principal para obtener cookies
+          print("Obteniendo cookies...")
+          try:
+              session.get("https://resultadoelectoral.onpe.gob.pe/main/resumen", timeout=15, verify=False)
+              print(f"  Cookies: {dict(session.cookies)}")
+          except Exception as e:
+              print(f"  Advertencia al obtener cookies: {e}")
+
+          time.sleep(2)
+
+          # Paso 2: hacer los requests a la API con las cookies obtenidas
+          session.headers.update({
+              "Accept": "application/json, text/plain, */*",
+              "Referer": "https://resultadoelectoral.onpe.gob.pe/main/resumen",
+              "Origin": "https://resultadoelectoral.onpe.gob.pe",
+              "sec-fetch-dest": "empty",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-site": "same-origin",
+          })
+
+          ENDPOINTS = {
+              "participantes": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion",
+              "totales": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion",
+          }
+
+          for name, url in ENDPOINTS.items():
+              ok = False
+              for attempt in range(3):
+                  try:
+                      r = session.get(url, timeout=15, verify=False)
+                      print(f"  {name} status: {r.status_code}, bytes: {len(r.content)}")
+                      data = r.json()
+                      assert data.get("success") == True, f"success!=True: {str(data)[:100]}"
+                      with open(f"data/{name}.json", "w") as f:
+                          json.dump(data, f)
+                      print(f"✓ {name} OK")
+                      ok = True
+                      break
+                  except Exception as e:
+                      print(f"  intento {attempt+1} falló: {e}")
+                      time.sleep(3)
+              if not ok:
+                  raise SystemExit(f"✗ {name} falló todos los intentos")
+
+          print("Todos los endpoints OK")
+          PYEOF
 
       - name: Add timestamp
         run: |
