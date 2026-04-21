@@ -511,13 +511,8 @@
       status.textContent = 'DATOS OK';
 
       document.getElementById('last-update').textContent =
-        'Página: ' + new Date().toLocaleTimeString('es-PE');
-
-      if (meta.updatedAt) {
-        const d = new Date(meta.updatedAt);
-        document.getElementById('onpe-update').textContent =
-          'ONPE: ' + d.toLocaleTimeString('es-PE');
-      }
+      'Actions: ' + new Date(meta.updatedAt || Date.now()).toLocaleTimeString('es-PE');
+      // onpe-update se setea en renderTotales con fechaActualizacion del JSON
 
     } catch (err) {
       console.error(err);
@@ -582,10 +577,9 @@
 
     // Mostrar fecha de actualización ONPE (fechaActualizacion es unix ms)
     if (fechaMs) {
-      const d = new Date(fechaMs);
-      document.getElementById('onpe-update').textContent =
-        'ONPE: ' + d.toLocaleTimeString('es-PE');
-    }
+    const d = new Date(fechaMs);
+    document.getElementById('onpe-update').textContent = 'ACTUALIZADO AL ' + d.toLocaleDateString('es-PE', {day:'2-digit', month:'2-digit', year:'numeric'}).replace(/\//g, '/') + ' A LAS ' + d.toLocaleTimeString('es-PE');
+}
   }
 
   function renderCandidatos(data) {
@@ -633,7 +627,7 @@
     // Tomamos las últimas 2 palabras como apellidos
     const parts = nombre.trim().split(' ');
     if (parts.length == 4) return parts[parts.length-4] + ' ' + parts[parts.length-2];
-    if (parts.length == 5) return parts[parts.length-5] + ' ' + parts[parts.length-3] + ' ' + parts[parts.length-3];
+    if (parts.length == 5) return parts[parts.length-5] + ' ' + parts[parts.length-3] + ' ' + parts[parts.length-2];
     if (parts.length == 3) return parts[parts.length-3] + ' ' + parts[parts.length-2];
 
     return nombre;
