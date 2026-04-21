@@ -596,7 +596,7 @@
       return;
     }
     // Solo top 4
-    const top = lista.slice(-4);
+    const top = lista.slice(0, 4);
     const maxVotos = Math.max(...top.map(getVotos));
 
     document.getElementById('candidates-list').innerHTML = top.map((c, i) => {
@@ -632,8 +632,10 @@
     // En ONPE el formato es "NOMBRE1 NOMBRE2 APELLIDO1 APELLIDO2"
     // Tomamos las últimas 2 palabras como apellidos
     const parts = nombre.trim().split(' ');
-    if (parts.length >= 4) return parts[parts.length-4] + ' ' + parts[parts.length-2];
-    if (parts.length >= 2) return parts[parts.length-2] + ' ' + parts[parts.length-1];
+    if (parts.length == 4) return parts[parts.length-4] + ' ' + parts[parts.length-2];
+    if (parts.length == 5) return parts[parts.length-5] + ' ' + parts[parts.length-3] + ' ' + parts[parts.length-3];
+    if (parts.length == 3) return parts[parts.length-3] + ' ' + parts[parts.length-2];
+
     return nombre;
   }
 
