@@ -2,9 +2,8 @@ name: Fetch ONPE Data
 
 on:
   schedule:
-    # Cada 5 minutos (GitHub Actions mínimo es 5 min)
     - cron: '*/5 * * * *'
-  workflow_dispatch: # permite ejecutar manualmente
+  workflow_dispatch:
 
 jobs:
   fetch:
@@ -18,19 +17,29 @@ jobs:
 
       - name: Fetch participantes
         run: |
-          curl -s \
-            -H "Accept: application/json" \
-            -H "User-Agent: Mozilla/5.0" \
+          curl -s -L \
+            -H "Accept: application/json, text/plain, */*" \
+            -H "Accept-Language: es-PE,es;q=0.9" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+            -H "Referer: https://resultadoelectoral.onpe.gob.pe/main/resumen" \
+            -H "Origin: https://resultadoelectoral.onpe.gob.pe" \
             "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion" \
             -o data/participantes.json
+          python3 -c "import json; json.load(open('data/participantes.json'))" \
+            || (echo "No es JSON valido:"; head -3 data/participantes.json; exit 1)
 
       - name: Fetch totales
         run: |
-          curl -s \
-            -H "Accept: application/json" \
-            -H "User-Agent: Mozilla/5.0" \
+          curl -s -L \
+            -H "Accept: application/json, text/plain, */*" \
+            -H "Accept-Language: es-PE,es;q=0.9" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+            -H "Referer: https://resultadoelectoral.onpe.gob.pe/main/resumen" \
+            -H "Origin: https://resultadoelectoral.onpe.gob.pe" \
             "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion" \
             -o data/totales.json
+          python3 -c "import json; json.load(open('data/totales.json'))" \
+            || (echo "No es JSON valido:"; head -3 data/totales.json; exit 1)
 
       - name: Add timestamp
         run: |
