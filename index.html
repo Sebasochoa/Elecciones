@@ -7,19 +7,19 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0e1a;
-    --surface: #111827;
-    --surface2: #1a2235;
-    --border: #1e2d45;
-    --accent: #e8c84a;
-    --accent2: #4a9eff;
-    --text: #e8eaf0;
-    --muted: #6b7a99;
-    --red: #ff4d6d;
-    --green: #4ade80;
-    --gold: #fbbf24;
-    --silver: #94a3b8;
-    --bronze: #c0783c;
+    --bg: #1a0a14;
+    --surface: #26101d;
+    --surface2: #331625;
+    --border: #4a1e33;
+    --accent: #f472b6;
+    --accent2: #e879a0;
+    --text: #fce7f3;
+    --muted: #9d6080;
+    --red: #fb7185;
+    --green: #34d399;
+    --gold: #f9a8d4;
+    --silver: #c084fc;
+    --bronze: #e879a0;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -200,7 +200,7 @@
   }
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    background: linear-gradient(90deg, #c026d3, #f472b6);
     border-radius: 3px;
     transition: width 1s ease;
   }
@@ -243,7 +243,7 @@
   .candidate-row:hover { border-color: rgba(74,158,255,0.3); transform: translateX(2px); }
   .candidate-row.rank-1 {
     border-color: rgba(251,191,36,0.4);
-    background: linear-gradient(135deg, #111827, #16201a);
+    background: linear-gradient(135deg, #26101d, #2d0f20);
   }
   .candidate-row.rank-1::before,
   .candidate-row.rank-2::before,
@@ -307,7 +307,7 @@
     transition: width 1s ease;
     background: var(--accent2);
   }
-  .rank-1 .bar-fill { background: linear-gradient(90deg, var(--gold), #f59e0b); }
+  .rank-1 .bar-fill { background: linear-gradient(90deg, #f472b6, #ec4899); }
   .rank-2 .bar-fill { background: var(--silver); }
   .rank-3 .bar-fill { background: var(--bronze); }
   .bar-pct-label {
