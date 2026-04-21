@@ -488,10 +488,11 @@
     try {
       // Cache-bust para que no sirva versión vieja
       const ts = Date.now();
+      const base = document.querySelector('base')?.href || (location.origin + location.pathname.replace(/\/[^/]*$/, '/'));
       const [resPart, resTot, resMeta] = await Promise.all([
-        fetch(`data/participantes.json?t=${ts}`),
-        fetch(`data/totales.json?t=${ts}`),
-        fetch(`data/meta.json?t=${ts}`)
+        fetch(`${base}data/participantes.json?t=${ts}`),
+        fetch(`${base}data/totales.json?t=${ts}`),
+        fetch(`${base}data/meta.json?t=${ts}`)
       ]);
 
       if (!resPart.ok || !resTot.ok) throw new Error('No se pudieron cargar los datos.');
