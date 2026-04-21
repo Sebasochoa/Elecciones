@@ -17,96 +17,65 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Fetch data via Python
+      - name: Install dependencies
+        run: pip install requests --break-system-packages
+
+      - name: Fetch data
         run: |
           python3 << 'PYEOF'
-          import urllib.request
-          import urllib.parse
+          import requests
           import json
-          import ssl
           import time
 
-          ctx = ssl.create_default_context()
-          ctx.check_hostname = False
-          ctx.verify_mode = ssl.CERT_NONE
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept-Language": "es-PE,es;q=0.9",
+          })
+
+          # Paso 1: visitar la página principal para obtener cookies
+          print("Obteniendo cookies...")
+          try:
+              session.get("https://resultadoelectoral.onpe.gob.pe/main/resumen", timeout=15, verify=False)
+              print(f"  Cookies: {dict(session.cookies)}")
+          except Exception as e:
+              print(f"  Advertencia al obtener cookies: {e}")
+
+          time.sleep(2)
+
+          # Paso 2: hacer los requests a la API con las cookies obtenidas
+          session.headers.update({
+              "Accept": "application/json, text/plain, */*",
+              "Referer": "https://resultadoelectoral.onpe.gob.pe/main/resumen",
+              "Origin": "https://resultadoelectoral.onpe.gob.pe",
+              "sec-fetch-dest": "empty",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-site": "same-origin",
+          })
 
           ENDPOINTS = {
               "participantes": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion",
               "totales": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion",
           }
 
-          HEADERS = {
-              "Accept": "application/json, text/plain, */*",
-              "Accept-Language": "es-PE,es;q=0.9",
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-              "Referer": "https://resultadoelectoral.onpe.gob.pe/main/resumen",
-              "Origin": "https://resultadoelectoral.onpe.gob.pe",
-              "sec-fetch-dest": "empty",
-              "sec-fetch-mode": "cors",
-              "sec-fetch-site": "same-origin",
-              "Cache-Control": "no-cache",
-          }
-
-          def try_direct(url):
-              req = urllib.request.Request(url, headers=HEADERS)
-              resp = urllib.request.urlopen(req, context=ctx, timeout=15)
-              data = json.loads(resp.read())
-              assert data.get("success") == True
-              return data
-
-          def try_proxy(url, proxy_url):
-              encoded = urllib.parse.quote(url, safe='')
-              full = proxy_url.format(url=encoded)
-              req = urllib.request.Request(full, headers={"User-Agent": "Mozilla/5.0"})
-              resp = urllib.request.urlopen(req, context=ctx, timeout=20)
-              raw = json.loads(resp.read())
-              # allorigins devuelve {"contents": "..."}
-              if "contents" in raw:
-                  data = json.loads(raw["contents"])
-              else:
-                  data = raw
-              assert data.get("success") == True
-              return data
-
-          PROXIES = [
-              "https://api.allorigins.win/get?url={url}",
-              "https://corsproxy.io/?{url}",
-              "https://api.codetabs.com/v1/proxy?quest={url}",
-          ]
-
           for name, url in ENDPOINTS.items():
-              saved = False
-
-              # Intento directo
-              for attempt in range(2):
+              ok = False
+              for attempt in range(3):
                   try:
-                      data = try_direct(url)
+                      r = session.get(url, timeout=15, verify=False)
+                      print(f"  {name} status: {r.status_code}, bytes: {len(r.content)}")
+                      data = r.json()
+                      assert data.get("success") == True, f"success!=True: {str(data)[:100]}"
                       with open(f"data/{name}.json", "w") as f:
                           json.dump(data, f)
-                      print(f"✓ {name} OK directo")
-                      saved = True
+                      print(f"✓ {name} OK")
+                      ok = True
                       break
                   except Exception as e:
-                      print(f"  directo intento {attempt+1} falló: {e}")
-                      time.sleep(2)
-
-              # Intentos via proxy
-              if not saved:
-                  for proxy in PROXIES:
-                      try:
-                          data = try_proxy(url, proxy)
-                          with open(f"data/{name}.json", "w") as f:
-                              json.dump(data, f)
-                          print(f"✓ {name} OK via {proxy[:40]}")
-                          saved = True
-                          break
-                      except Exception as e:
-                          print(f"  proxy {proxy[:40]} falló: {e}")
-                          time.sleep(2)
-
-              if not saved:
-                  print(f"✗ {name} TODOS LOS INTENTOS FALLARON")
-                  raise SystemExit(1)
+                      print(f"  intento {attempt+1} falló: {e}")
+                      time.sleep(3)
+              if not ok:
+                  raise SystemExit(f"✗ {name} falló todos los intentos")
 
           print("Todos los endpoints OK")
           PYEOF
