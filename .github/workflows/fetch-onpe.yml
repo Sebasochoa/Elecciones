@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   fetch:
@@ -15,69 +17,99 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Fetch participantes
+      - name: Fetch data via Python
         run: |
-          # Intentar con múltiples proxies/métodos hasta que uno funcione
-          URL="https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion"
-          
-          # Intento 1: directo con todos los headers
-          curl -s -L --max-time 15 \
-            -H "Accept: application/json, text/plain, */*" \
-            -H "Accept-Language: es-PE,es;q=0.9,en;q=0.8" \
-            -H "Cache-Control: no-cache" \
-            -H "Connection: keep-alive" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
-            -H "Referer: https://resultadoelectoral.onpe.gob.pe/" \
-            -H "sec-ch-ua: \"Chromium\";v=\"124\"" \
-            -H "sec-ch-ua-mobile: ?0" \
-            -H "sec-fetch-dest: empty" \
-            -H "sec-fetch-mode: cors" \
-            -H "sec-fetch-site: same-origin" \
-            "$URL" -o data/participantes.json
-          
-          python3 -c "import json; json.load(open('data/participantes.json'))" 2>/dev/null && echo "OK directo" && exit 0
-          
-          # Intento 2: via allorigins proxy
-          echo "Intentando via proxy..."
-          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$URL'))")
-          curl -s -L --max-time 15 \
-            "https://api.allorigins.win/get?url=${ENCODED}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); open('data/participantes.json','w').write(d['contents'])"
-          
-          python3 -c "import json; json.load(open('data/participantes.json'))" 2>/dev/null && echo "OK via proxy" && exit 0
-          
-          echo "Todos los intentos fallaron"
-          head -3 data/participantes.json
-          exit 1
+          python3 << 'PYEOF'
+          import urllib.request
+          import urllib.parse
+          import json
+          import ssl
+          import time
 
-      - name: Fetch totales
-        run: |
-          URL="https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion"
-          
-          curl -s -L --max-time 15 \
-            -H "Accept: application/json, text/plain, */*" \
-            -H "Accept-Language: es-PE,es;q=0.9,en;q=0.8" \
-            -H "Cache-Control: no-cache" \
-            -H "Connection: keep-alive" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
-            -H "Referer: https://resultadoelectoral.onpe.gob.pe/" \
-            -H "sec-fetch-dest: empty" \
-            -H "sec-fetch-mode: cors" \
-            -H "sec-fetch-site: same-origin" \
-            "$URL" -o data/totales.json
-          
-          python3 -c "import json; json.load(open('data/totales.json'))" 2>/dev/null && echo "OK directo" && exit 0
-          
-          echo "Intentando via proxy..."
-          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$URL'))")
-          curl -s -L --max-time 15 \
-            "https://api.allorigins.win/get?url=${ENCODED}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); open('data/totales.json','w').write(d['contents'])"
-          
-          python3 -c "import json; json.load(open('data/totales.json'))" 2>/dev/null && echo "OK via proxy" && exit 0
-          
-          echo "Todos los intentos fallaron"
-          exit 1
+          ctx = ssl.create_default_context()
+          ctx.check_hostname = False
+          ctx.verify_mode = ssl.CERT_NONE
+
+          ENDPOINTS = {
+              "participantes": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/participantes?idEleccion=10&tipoFiltro=eleccion",
+              "totales": "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion",
+          }
+
+          HEADERS = {
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "es-PE,es;q=0.9",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Referer": "https://resultadoelectoral.onpe.gob.pe/main/resumen",
+              "Origin": "https://resultadoelectoral.onpe.gob.pe",
+              "sec-fetch-dest": "empty",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-site": "same-origin",
+              "Cache-Control": "no-cache",
+          }
+
+          def try_direct(url):
+              req = urllib.request.Request(url, headers=HEADERS)
+              resp = urllib.request.urlopen(req, context=ctx, timeout=15)
+              data = json.loads(resp.read())
+              assert data.get("success") == True
+              return data
+
+          def try_proxy(url, proxy_url):
+              encoded = urllib.parse.quote(url, safe='')
+              full = proxy_url.format(url=encoded)
+              req = urllib.request.Request(full, headers={"User-Agent": "Mozilla/5.0"})
+              resp = urllib.request.urlopen(req, context=ctx, timeout=20)
+              raw = json.loads(resp.read())
+              # allorigins devuelve {"contents": "..."}
+              if "contents" in raw:
+                  data = json.loads(raw["contents"])
+              else:
+                  data = raw
+              assert data.get("success") == True
+              return data
+
+          PROXIES = [
+              "https://api.allorigins.win/get?url={url}",
+              "https://corsproxy.io/?{url}",
+              "https://api.codetabs.com/v1/proxy?quest={url}",
+          ]
+
+          for name, url in ENDPOINTS.items():
+              saved = False
+
+              # Intento directo
+              for attempt in range(2):
+                  try:
+                      data = try_direct(url)
+                      with open(f"data/{name}.json", "w") as f:
+                          json.dump(data, f)
+                      print(f"✓ {name} OK directo")
+                      saved = True
+                      break
+                  except Exception as e:
+                      print(f"  directo intento {attempt+1} falló: {e}")
+                      time.sleep(2)
+
+              # Intentos via proxy
+              if not saved:
+                  for proxy in PROXIES:
+                      try:
+                          data = try_proxy(url, proxy)
+                          with open(f"data/{name}.json", "w") as f:
+                              json.dump(data, f)
+                          print(f"✓ {name} OK via {proxy[:40]}")
+                          saved = True
+                          break
+                      except Exception as e:
+                          print(f"  proxy {proxy[:40]} falló: {e}")
+                          time.sleep(2)
+
+              if not saved:
+                  print(f"✗ {name} TODOS LOS INTENTOS FALLARON")
+                  raise SystemExit(1)
+
+          print("Todos los endpoints OK")
+          PYEOF
 
       - name: Add timestamp
         run: |
