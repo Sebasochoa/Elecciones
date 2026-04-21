@@ -596,7 +596,7 @@
       return;
     }
     // Solo top 4
-    const top = lista.slice(0, 4);
+    const top = lista.slice(-4);
     const maxVotos = getVotos(top[0]);
 
     document.getElementById('candidates-list').innerHTML = top.map((c, i) => {
@@ -632,7 +632,7 @@
     // En ONPE el formato es "NOMBRE1 NOMBRE2 APELLIDO1 APELLIDO2"
     // Tomamos las últimas 2 palabras como apellidos
     const parts = nombre.trim().split(' ');
-    if (parts.length >= 4) return parts[parts.length-2] + ' ' + parts[parts.length-1];
+    if (parts.length >= 4) return parts[parts.length-4] + ' ' + parts[parts.length-1];
     if (parts.length >= 2) return parts[parts.length-2] + ' ' + parts[parts.length-1];
     return nombre;
   }
@@ -662,8 +662,8 @@
           ${r.label}
         </div>
         <div class="distance-value">
-          <div class="dist-pct">${r.diffP !== null ? '+' + Number(Math.abs(r.diffP)).toFixed(3) + 'pp' : '—'}</div>
-          <div class="dist-votes">${fmtNum(r.diffV)} votos</div>
+          <div class="dist-pct">${fmtNum(r.diffV)} votos</div>
+          <div class="dist-votes">${r.diffP !== null ? '+' + Number(Math.abs(r.diffP)).toFixed(3) + 'pp' : '—'}</div>
         </div>
       </div>
     `).join('');
