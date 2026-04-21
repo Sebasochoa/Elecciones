@@ -596,7 +596,7 @@
       return;
     }
     // Solo top 4
-    const top = lista.slice(-4);
+    const top = lista.slice(4);
     const maxVotos = getVotos(top[0]);
 
     document.getElementById('candidates-list').innerHTML = top.map((c, i) => {
