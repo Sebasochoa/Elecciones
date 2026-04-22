@@ -468,15 +468,14 @@
 
   <footer>
     Fuente: <a href="https://resultadoelectoral.onpe.gob.pe" target="_blank">resultadoelectoral.onpe.gob.pe</a><br>
-    Datos actualizados por GitHub Actions cada 5 minutos
+    Vía <a href="https://devapp.zaylar.com/API_DOCS" target="_blank">Zaylar API</a> · Se actualiza cada 3 minutos
   </footer>
 
 </div>
 <script>
+  const API = 'https://devapp.zaylar.com/api/elections/presidential';
   const fmtNum = n => Number(n).toLocaleString('es-PE');
-  const fmtPct = n => Number(n).toFixed(3) + '%';
 
-  // Lee los JSON locales que GitHub Actions actualiza
   async function loadData() {
     const btn = document.getElementById('refresh-btn');
     const status = document.getElementById('live-status');
@@ -486,39 +485,24 @@
     document.getElementById('error-banner').style.display = 'none';
 
     try {
-      // Cache-bust para que no sirva versión vieja
-      const ts = Date.now();
-      const base = document.querySelector('base')?.href || (location.origin + location.pathname.replace(/\/[^/]*$/, '/'));
-      const [resPart, resTot, resMeta] = await Promise.all([
-        fetch(`${base}data/participantes.json?t=${ts}`),
-        fetch(`${base}data/totales.json?t=${ts}`),
-        fetch(`${base}data/meta.json?t=${ts}`)
-      ]);
+      const res = await fetch(API + '?t=' + Date.now());
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
 
-      if (!resPart.ok || !resTot.ok) throw new Error('No se pudieron cargar los datos.');
-
-      const [participantes, totales, meta] = await Promise.all([
-        resPart.json(),
-        resTot.json(),
-        resMeta.json().catch(() => ({}))
-      ]);
-
-      renderTotales(totales);
-      renderCandidatos(participantes);
-      renderDistancias(participantes);
+      renderTotales(data);
+      renderCandidatos(data);
+      renderDistancias(data);
 
       status.className = 'live-dot';
       status.textContent = 'DATOS OK';
-
       document.getElementById('last-update').textContent =
-      'Actions: ' + new Date(meta.updatedAt || Date.now()).toLocaleTimeString('es-PE');
-      // onpe-update se setea en renderTotales con fechaActualizacion del JSON
+        'Actualizado: ' + new Date().toLocaleTimeString('es-PE');
 
     } catch (err) {
       console.error(err);
       const banner = document.getElementById('error-banner');
       banner.style.display = 'block';
-      banner.textContent = '⚠ ' + err.message + ' Asegúrate de que GitHub Actions haya corrido al menos una vez.';
+      banner.textContent = '⚠ No se pudo conectar con la API. ' + err.message;
       status.className = 'live-dot error';
       status.textContent = 'ERROR';
     } finally {
@@ -526,74 +510,66 @@
     }
   }
 
-  /* ── helpers para parsear la respuesta de ONPE ── */
-  function getCandidatos(data) {
-    // La API devuelve { success, data: [...] }
-    let lista = Array.isArray(data)
-      ? data
-      : (data.data ?? data.participantes ?? data.lista ?? []);
-    // Ordenar por totalVotosValidos descendente
-    return lista.slice().sort((a, b) => (b.totalVotosValidos ?? 0) - (a.totalVotosValidos ?? 0));
-  }
-  // Campos exactos de ONPE
-  const getVotos  = c => c.totalVotosValidos ?? 0;
-  const getPct    = c => c.porcentajeVotosValidos ?? null;   // viene como 17.047
-  const getNombre = c => c.nombreCandidato ?? '—';
-  const getPartido= c => c.nombreAgrupacionPolitica ?? '';
-
-  function renderTotales(raw) {
-    const data = (raw.data && !Array.isArray(raw.data)) ? raw.data : raw;
-    // actasContabilizadas = 93.872 (porcentaje directo)
-    // contabilizadas = 87081, enviadasJee = 5610, pendientesJee = 75
-    const pctFinal       = data.actasContabilizadas ?? null;
-    const contabilizadas = data.contabilizadas ?? null;
-    const envioJEE       = data.enviadasJee ?? null;
-    const pendientes     = data.pendientesJee ?? null;
-    // fechaActualizacion es unix ms
-    const fechaMs        = data.fechaActualizacion ?? null;
+  function renderTotales(data) {
+    const a = data.actas ?? {};
+    const pct            = a.actas_contabilizadas_pct ?? null;
+    const contabilizadas = a.actas_contabilizadas ?? null;
+    const enviadasJee    = a.actas_enviadas_jee ?? null;
+    const pendientes     = a.actas_pendientes ?? null;
+    const snapshotTime   = data.snapshot_time ?? null;
 
     document.getElementById('totales-strip').innerHTML = `
       <div class="stat-card">
         <div class="stat-label">Contabilizadas</div>
-        <div class="stat-value">${pctFinal !== null ? Number(pctFinal).toFixed(3) + '%' : '—'}</div>
+        <div class="stat-value">${pct !== null ? Number(pct).toFixed(3) + '%' : '—'}</div>
         <div class="stat-sub">${contabilizadas !== null ? fmtNum(contabilizadas) + ' actas' : ''}</div>
       </div>
       <div class="stat-card blue">
         <div class="stat-label">Para envío al JEE</div>
-        <div class="stat-value">${envioJEE !== null ? fmtNum(envioJEE) : '—'}</div>
-        <div class="stat-sub">${data.actasEnviadasJee != null ? Number(data.actasEnviadasJee).toFixed(3) + '%' : ''}</div>
+        <div class="stat-value">${enviadasJee !== null ? fmtNum(enviadasJee) : '—'}</div>
       </div>
       <div class="stat-card muted">
         <div class="stat-label">Pendientes JEE</div>
         <div class="stat-value">${pendientes !== null ? fmtNum(pendientes) : '—'}</div>
-        <div class="stat-sub">${data.actasPendientesJee != null ? Number(data.actasPendientesJee).toFixed(3) + '%' : ''}</div>
       </div>
     `;
 
-    if (pctFinal !== null) {
-      document.getElementById('progress-pct').textContent = Number(pctFinal).toFixed(3) + '%';
-      document.getElementById('progress-fill').style.width = Math.min(pctFinal, 100) + '%';
+    if (pct !== null) {
+      document.getElementById('progress-pct').textContent = Number(pct).toFixed(3) + '%';
+      document.getElementById('progress-fill').style.width = Math.min(pct, 100) + '%';
     }
 
-    // Mostrar fecha de actualización ONPE (fechaActualizacion es unix ms)
-    if (fechaMs) {
-    const d = new Date(fechaMs);
-    document.getElementById('onpe-update').textContent = 'ACTUALIZADO AL ' + d.toLocaleDateString('es-PE', {day:'2-digit', month:'2-digit', year:'numeric'}).replace(/\//g, '/') + ' A LAS ' + d.toLocaleTimeString('es-PE');
-}
+    if (snapshotTime) {
+      const d = new Date(snapshotTime);
+      document.getElementById('onpe-update').textContent =
+        'ACTUALIZADO AL ' +
+        d.toLocaleDateString('es-PE', {day:'2-digit', month:'2-digit', year:'numeric'}) +
+        ' A LAS ' + d.toLocaleTimeString('es-PE');
+    }
+  }
+
+  const getVotos  = c => c.votes ?? 0;
+  const getPct    = c => c.percentage ?? null;
+  const getNombre = c => c.name ?? '—';
+  const getPartido= c => c.party ?? '';
+
+  function shortName(nombre) {
+    const parts = nombre.trim().split(' ');
+    if (parts.length >= 4) return parts[parts.length-2] + ' ' + parts[parts.length-1];
+    if (parts.length >= 2) return parts[parts.length-2] + ' ' + parts[parts.length-1];
+    return nombre;
   }
 
   function renderCandidatos(data) {
-    const lista = getCandidatos(data);
+    const lista = (data.candidates ?? []).slice(0, 4);
     if (!lista.length) {
       document.getElementById('candidates-list').innerHTML =
         '<p style="color:var(--muted);font-size:13px;padding:12px">Sin datos aún.</p>';
       return;
     }
-    // Solo top 4
-    const top = lista.slice(0, 4);
-    const maxVotos = Math.max(...top.map(getVotos));
+    const maxVotos = getVotos(lista[0]);
 
-    document.getElementById('candidates-list').innerHTML = top.map((c, i) => {
+    document.getElementById('candidates-list').innerHTML = lista.map((c, i) => {
       const rank      = i + 1;
       const votos     = getVotos(c);
       const pct       = getPct(c);
@@ -622,25 +598,13 @@
     }).join('');
   }
 
-  function shortName(nombre) {
-    // En ONPE el formato es "NOMBRE1 NOMBRE2 APELLIDO1 APELLIDO2"
-    // Tomamos las últimas 2 palabras como apellidos
-    const parts = nombre.trim().split(' ');
-    if (parts.length == 4) return parts[parts.length-4] + ' ' + parts[parts.length-2];
-    if (parts.length == 5) return parts[parts.length-5] + ' ' + parts[parts.length-3] + ' ' + parts[parts.length-2];
-    if (parts.length == 3) return parts[parts.length-3] + ' ' + parts[parts.length-2];
-
-    return nombre;
-  }
-
   function renderDistancias(data) {
-    const lista = getCandidatos(data);
+    const lista = (data.candidates ?? []).slice(0, 4);
     if (lista.length < 2) { document.getElementById('distances-list').innerHTML = ''; return; }
 
-    const top = lista.slice(0, 4);
     const rows = [];
-    for (let i = 0; i < top.length - 1; i++) {
-      const a = top[i], b = top[i + 1];
+    for (let i = 0; i < lista.length - 1; i++) {
+      const a = lista[i], b = lista[i + 1];
       const pa = getPct(a), pb = getPct(b);
       const diffV = getVotos(a) - getVotos(b);
       const diffP = pa !== null && pb !== null ? pa - pb : null;
@@ -666,8 +630,7 @@
   }
 
   loadData();
-  // Re-chequea cada 5 minutos (en sintonía con el workflow)
-  setInterval(loadData, 3 * 60 * 1000);
+  setInterval(loadData, 20 * 60 * 1000);
 </script>
 </body>
 </html>
