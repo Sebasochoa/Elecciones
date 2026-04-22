@@ -473,7 +473,8 @@
 
 </div>
 <script>
-  const API = 'https://devapp.zaylar.com/api/elections/presidential';
+  const API      = 'https://devapp.zaylar.com/api/elections/presidential';
+  const API_HIST = 'https://devapp.zaylar.com/api/elections/presidential/history';
   const fmtNum = n => Number(n).toLocaleString('es-PE');
 
   async function loadData() {
@@ -485,13 +486,21 @@
     document.getElementById('error-banner').style.display = 'none';
 
     try {
-      const res = await fetch(API + '?t=' + Date.now());
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
+      const ts = Date.now();
+      const [resMain, resHist] = await Promise.all([
+        fetch(API + '?t=' + ts),
+        fetch(API_HIST + '?t=' + ts)
+      ]);
+      if (!resMain.ok) throw new Error('HTTP ' + resMain.status);
+      const data = await resMain.json();
+      const hist = resHist.ok ? await resHist.json() : { snapshots: [] };
+
+      const snapshots = hist.snapshots ?? [];
+      const prev = snapshots.length >= 2 ? snapshots[snapshots.length - 2] : null;
 
       renderTotales(data);
-      renderCandidatos(data);
-      renderDistancias(data);
+      renderCandidatos(data, prev);
+      renderDistancias(data, prev);
 
       status.className = 'live-dot';
       status.textContent = 'DATOS OK';
@@ -515,7 +524,7 @@
     const pct            = a.actas_contabilizadas_pct ?? null;
     const contabilizadas = a.actas_contabilizadas ?? null;
     const enviadasJee    = a.actas_enviadas_jee ?? null;
-    const pendientes     = a.actas_pendientes ?? null;
+    const pendientes     = a.actas_pendientes_jee ?? null;
     const snapshotTime   = data.snapshot_time ?? null;
 
     document.getElementById('totales-strip').innerHTML = `
@@ -555,12 +564,14 @@
 
   function shortName(nombre) {
     const parts = nombre.trim().split(' ');
-    if (parts.length >= 4) return parts[parts.length-2] + ' ' + parts[parts.length-1];
-    if (parts.length >= 2) return parts[parts.length-2] + ' ' + parts[parts.length-1];
+    if (parts.length == 4) return parts[parts.length-4] + ' ' + parts[parts.length-2];
+    if (parts.length == 5) return parts[parts.length-5] + ' ' + parts[parts.length-3] + ' ' + parts[parts.length-2];
+    if (parts.length == 3) return parts[parts.length-3] + ' ' + parts[parts.length-2];
+
     return nombre;
   }
 
-  function renderCandidatos(data) {
+  function renderCandidatos(data, prev) {
     const lista = (data.candidates ?? []).slice(0, 4);
     if (!lista.length) {
       document.getElementById('candidates-list').innerHTML =
@@ -569,6 +580,10 @@
     }
     const maxVotos = getVotos(lista[0]);
 
+    // Mapa votos anteriores por candidate_id
+    const prevMap = {};
+    if (prev) (prev.candidates ?? []).forEach(c => { prevMap[c.candidate_id] = c.votes; });
+
     document.getElementById('candidates-list').innerHTML = lista.map((c, i) => {
       const rank      = i + 1;
       const votos     = getVotos(c);
@@ -576,11 +591,19 @@
       const barWidth  = maxVotos > 0 ? (votos / maxVotos * 100).toFixed(1) : 0;
       const rankClass = rank <= 3 ? `rank-${rank}` : '';
 
+      const prevVotos = prevMap[c.candidate_id] ?? null;
+      const delta     = (prevVotos !== null && votos > 0) ? votos - prevVotos : null;
+      const deltaHtml = delta !== null
+        ? `<div style="font-size:10px;font-family:'DM Mono',monospace;color:${delta >= 0 ? 'var(--green)' : 'var(--red)'}">
+             ${delta >= 0 ? '▲' : '▼'} ${fmtNum(Math.abs(delta))}
+           </div>`
+        : '';
+
       return `
         <div class="candidate-row ${rankClass}">
           <div class="rank-num">${rank}</div>
           <div class="candidate-info">
-            <div class="candidate-name">${getNombre(c)}</div>
+            <div class="candidate-name">${shortName(getNombre(c))}</div>
             <div class="candidate-party">${getPartido(c)}</div>
             <div class="bar-wrap">
               <div class="bar-track">
@@ -592,26 +615,40 @@
           <div class="candidate-stats">
             <div class="votes-pct">${pct !== null ? Number(pct).toFixed(3) + '%' : '—'}</div>
             <div class="votes-count">${votos > 0 ? fmtNum(votos) + ' votos' : '—'}</div>
+            ${deltaHtml}
           </div>
         </div>
       `;
     }).join('');
   }
 
-  function renderDistancias(data) {
+  function renderDistancias(data, prev) {
     const lista = (data.candidates ?? []).slice(0, 4);
     if (lista.length < 2) { document.getElementById('distances-list').innerHTML = ''; return; }
+
+    const prevMap = {};
+    if (prev) (prev.candidates ?? []).forEach(c => { prevMap[c.candidate_id] = c.votes; });
 
     const rows = [];
     for (let i = 0; i < lista.length - 1; i++) {
       const a = lista[i], b = lista[i + 1];
-      const pa = getPct(a), pb = getPct(b);
       const diffV = getVotos(a) - getVotos(b);
-      const diffP = pa !== null && pb !== null ? pa - pb : null;
+
+      const aPrev = prevMap[a.candidate_id] ?? null;
+      const bPrev = prevMap[b.candidate_id] ?? null;
+      const prevDiffV = (aPrev !== null && bPrev !== null) ? aPrev - bPrev : null;
+      const deltaDiff = prevDiffV !== null ? diffV - prevDiffV : null;
+
+      const deltaHtml = deltaDiff !== null
+        ? `<div style="font-size:10px;font-family:'DM Mono',monospace;color:${deltaDiff <= 0 ? 'var(--green)' : 'var(--red)'}">
+             ${deltaDiff <= 0 ? '▼' : '▲'} ${fmtNum(Math.abs(deltaDiff))} vs anterior
+           </div>`
+        : '';
+
       rows.push({
         label: `<strong>${shortName(getNombre(a))}</strong> vs <strong>${shortName(getNombre(b))}</strong>`,
         tag: `${i+1}° vs ${i+2}°`,
-        diffV, diffP
+        diffV, deltaHtml
       });
     }
 
@@ -623,7 +660,7 @@
         </div>
         <div class="distance-value">
           <div class="dist-pct">${fmtNum(r.diffV)} votos</div>
-          <div class="dist-votes">${r.diffP !== null ? '+' + Number(Math.abs(r.diffP)).toFixed(3) + 'pp' : '—'}</div>
+          ${r.deltaHtml}
         </div>
       </div>
     `).join('');
